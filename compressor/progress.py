@@ -18,7 +18,7 @@ def parse_progress_line(line: str, total_duration_us: float, current_pass: int) 
     if total_duration_us <= 0:
         return None
 
-    pass_progress = min(out_time_us / total_duration_us, 1.0)
+    pass_progress = max(0.0, min(out_time_us / total_duration_us, 1.0))
 
     if current_pass == 1:
         return pass_progress * 0.5
