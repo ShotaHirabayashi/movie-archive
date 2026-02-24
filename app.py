@@ -11,8 +11,9 @@ from compressor.ffprobe import get_video_metadata
 from config import AUDIO_BITRATE_PRESETS, RESOLUTION_PRESETS
 from utils.file_manager import cleanup_file, get_output_path, save_uploaded_file
 
-st.set_page_config(page_title="動画圧縮ツール", page_icon="🎬", layout="wide")
-st.title("動画圧縮ツール")
+st.set_page_config(page_title="Movie Cut", page_icon="🎬", layout="wide")
+st.title("Movie Cut")
+st.caption("動画を目標サイズに圧縮するツール")
 
 # --- セッション状態の初期化 ---
 for key, default in [
