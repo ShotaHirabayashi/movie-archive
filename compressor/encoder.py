@@ -2,12 +2,35 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable
 
 from compressor.progress import parse_progress_line
 from config import MAX_RETRY_COUNT, RETRY_BITRATE_FACTOR, TARGET_SIZE_TOLERANCE
+
+
+def _ffmpeg_supports_stats_period() -> bool:
+    """FFmpegが -stats_period をサポートしているか確認する"""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-stats_period", "1", "-f", "lavfi", "-i", "nullsrc=d=0", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return "Unrecognized option" not in r.stderr
+    except Exception:
+        return False
+
+
+_HAS_STATS_PERIOD: bool | None = None
+
+
+def _get_stats_period_args() -> list[str]:
+    global _HAS_STATS_PERIOD
+    if _HAS_STATS_PERIOD is None:
+        _HAS_STATS_PERIOD = _ffmpeg_supports_stats_period()
+    return ["-stats_period", "0.5"] if _HAS_STATS_PERIOD else []
 
 
 def encode_video(
@@ -68,7 +91,7 @@ def _run_pass1(
     vf = _build_vf_filter(resolution)
     cmd = [
         "ffmpeg", "-y",
-        "-stats_period", "0.5",
+        *_get_stats_period_args(),
         "-i", input_path,
         "-c:v", "libx264",
         "-b:v", f"{int(video_bitrate_kbps)}k",
@@ -98,7 +121,7 @@ def _run_pass2(
     audio_opts = ["-c:a", "aac", "-b:a", f"{int(audio_bitrate_kbps)}k"] if has_audio else ["-an"]
     cmd = [
         "ffmpeg", "-y",
-        "-stats_period", "0.5",
+        *_get_stats_period_args(),
         "-i", input_path,
         "-c:v", "libx264",
         "-b:v", f"{int(video_bitrate_kbps)}k",

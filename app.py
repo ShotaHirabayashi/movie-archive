@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import traceback
 
 import streamlit as st
 
@@ -14,6 +16,10 @@ from utils.file_manager import cleanup_file, get_output_path, save_uploaded_file
 st.set_page_config(page_title="Movie Cut", page_icon="🎬", layout="wide")
 st.title("Movie Cut")
 st.caption("動画を目標サイズに圧縮するツール")
+
+if not shutil.which("ffmpeg"):
+    st.error("FFmpegがインストールされていません。packages.txt を確認してください。")
+    st.stop()
 
 # --- セッション状態の初期化 ---
 for key, default in [
@@ -191,3 +197,4 @@ else:
             st.rerun()
         except Exception as e:
             st.error(f"圧縮中にエラーが発生しました: {e}")
+            st.code(traceback.format_exc())
