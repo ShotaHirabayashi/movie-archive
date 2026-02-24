@@ -168,18 +168,25 @@ else:
     if st.button("圧縮開始", type="primary", disabled=not bitrate_result.is_feasible):
         output_path = get_output_path(uploaded_file.name)
 
+        step_text = st.empty()
         progress_bar = st.progress(0.0)
-        status_text = st.empty()
+        detail_text = st.empty()
 
         def update_progress(p: float):
-            progress_bar.progress(p)
             if p < 0.5:
-                status_text.caption(f"Pass 1/2 - 解析中... ({p * 200:.0f}%)")
+                pct = int(p * 200)
+                step_text.markdown("**Step 1/2** - 解析中")
+                progress_bar.progress(p * 2)
+                detail_text.caption(f"{pct}%")
             else:
-                status_text.caption(f"Pass 2/2 - エンコード中... ({(p - 0.5) * 200:.0f}%)")
+                pct = int((p - 0.5) * 200)
+                step_text.markdown("**Step 2/2** - エンコード中")
+                progress_bar.progress((p - 0.5) * 2)
+                detail_text.caption(f"{pct}%")
 
         try:
-            status_text.caption("Pass 1/2 - 解析中... (0%)")
+            step_text.markdown("**Step 1/2** - 解析中")
+            detail_text.caption("0%")
             encode_video(
                 input_path=input_path,
                 output_path=output_path,
@@ -191,7 +198,8 @@ else:
                 progress_callback=update_progress,
             )
             progress_bar.progress(1.0)
-            status_text.caption("完了!")
+            step_text.markdown("**完了!**")
+            detail_text.caption("100%")
             st.session_state["compress_done"] = True
             st.session_state["output_path"] = output_path
             st.rerun()
