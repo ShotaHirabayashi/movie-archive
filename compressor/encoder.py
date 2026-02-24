@@ -47,7 +47,8 @@ def encode_video(
     Returns:
         出力ファイルのパス
     """
-    passlog_prefix = os.path.join(tempfile.gettempdir(), "ffmpeg2pass")
+    passlog_dir = tempfile.mkdtemp(prefix="ffmpeg2pass_")
+    passlog_prefix = os.path.join(passlog_dir, "pass")
     total_duration_us = duration_seconds * 1_000_000
 
     current_bitrate_kbps = video_bitrate_kbps
@@ -68,7 +69,7 @@ def encode_video(
             if progress_callback:
                 progress_callback(0.0)
 
-    _cleanup_passlog(passlog_prefix)
+    _cleanup_passlog(passlog_dir)
     return output_path
 
 
@@ -171,8 +172,7 @@ def _run_ffmpeg(
     os.remove(stderr_log.name)
 
 
-def _cleanup_passlog(passlog_prefix: str) -> None:
-    for suffix in ["-0.log", "-0.log.mbtree"]:
-        path = passlog_prefix + suffix
-        if os.path.exists(path):
-            os.remove(path)
+def _cleanup_passlog(passlog_dir: str) -> None:
+    import shutil
+    if os.path.isdir(passlog_dir):
+        shutil.rmtree(passlog_dir, ignore_errors=True)

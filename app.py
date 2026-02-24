@@ -157,9 +157,13 @@ if st.session_state["compress_done"] and st.session_state["output_path"]:
 
         if st.button("最初からやり直す"):
             cleanup_file(output_path)
+            cleanup_file(input_path)
             st.session_state["compress_done"] = False
             st.session_state["output_path"] = None
             st.session_state["metadata"] = None
+            for k in list(st.session_state.keys()):
+                if k.startswith("uploaded_path_"):
+                    del st.session_state[k]
             st.rerun()
     else:
         st.error("出力ファイルが見つかりません")
