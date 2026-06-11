@@ -17,6 +17,22 @@ AUDIO_BITRATE_PRESETS: dict[str, int] = {
     "256 kbps (最高品質)": 256,
 }
 
+GIF_WIDTH_PRESETS: dict[str, int | None] = {
+    "オリジナル": None,
+    "800px": 800,
+    "640px": 640,
+    "480px": 480,
+    "320px": 320,
+}
+
+GIF_FPS_PRESETS: dict[str, int | None] = {
+    "オリジナル": None,
+    "15 fps": 15,
+    "12 fps": 12,
+    "10 fps": 10,
+    "8 fps": 8,
+}
+
 CONTAINER_OVERHEAD = 0.05  # 5%
 MIN_VIDEO_BITRATE_KBPS = 100
 DEFAULT_AUDIO_BITRATE_KBPS = 128

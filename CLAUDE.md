@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-Movie Cut - 動画を目標ファイルサイズに圧縮するWebツール。Python + Streamlit + FFmpeg（subprocess経由の2-pass encoding）で構成。
+Movie Cut - 動画を目標ファイルサイズに圧縮するWebツール。GIFのリサイズ機能も搭載（サイドバーメニューで切り替え）。Python + Streamlit + FFmpeg（subprocess経由の2-pass encoding）で構成。
 
 ## コマンド
 
@@ -38,9 +38,10 @@ GitHubリポジトリ: https://github.com/ShotaHirabayashi/movie-archive
 
 **データフロー**: アップロード → ffprobeでメタデータ取得 → ビットレート計算 → FFmpeg 2-pass encode → ダウンロード
 
-- `app.py` - Streamlit UI。同期的にFFmpegを実行し、`st.progress()` + `st.empty()` でリアルタイム進捗表示
+- `app.py` - Streamlit UI。サイドバーの `st.sidebar.radio` で「動画圧縮」「GIFリサイズ」を切り替え。同期的にFFmpegを実行し、`st.progress()` + `st.empty()` でリアルタイム進捗表示
 - `compressor/encoder.py` - 2-pass encoding の本体。`-progress pipe:1` のstdout をパースして進捗コールバックを呼ぶ。stderrは一時ファイルに書き出す（PIPEデッドロック回避）。出力が目標サイズを5%超過した場合、95%ビットレートで最大2回リトライ
-- `compressor/ffprobe.py` - `VideoMetadata` dataclass + ffprobe JSON出力パーサー
+- `compressor/gif_resizer.py` - GIFリサイズ。Pass1で `palettegen`、Pass2で `paletteuse` を適用（256色パレット最適化）。`scale=min(width\,iw)` でアップスケール防止。FFmpeg実行は `encoder._run_ffmpeg` を流用
+- `compressor/ffprobe.py` - `VideoMetadata` dataclass + ffprobe JSON出力パーサー（GIFも解析可、`fps` フィールドあり）
 - `compressor/bitrate_calculator.py` - 目標サイズ(MB) + 動画長(秒) → ビットレート算出。コンテナオーバーヘッド5%考慮
 - `compressor/progress.py` - FFmpegの `out_time_us` を進捗率(0.0-1.0)に変換。Pass1=0-0.5, Pass2=0.5-1.0。負値は0にクランプ
 - `utils/file_manager.py` - アップロードファイルのチャンク書き込み保存、`st.session_state`でパスキャッシュ、一時ファイルクリーンアップ

@@ -17,6 +17,7 @@ class VideoMetadata:
     has_audio: bool
     audio_codec: str | None = None
     audio_bitrate: int | None = None  # bps
+    fps: float | None = None
 
     @property
     def resolution_label(self) -> str:
@@ -83,4 +84,17 @@ def get_video_metadata(file_path: str) -> VideoMetadata:
         has_audio=audio_stream is not None,
         audio_codec=audio_stream.get("codec_name") if audio_stream else None,
         audio_bitrate=int(audio_stream.get("bit_rate", 0)) if audio_stream and audio_stream.get("bit_rate") else None,
+        fps=_parse_fps(video_stream),
     )
+
+
+def _parse_fps(video_stream: dict) -> float | None:
+    """avg_frame_rate（例: "12/1"）をfloatに変換する"""
+    rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate") or ""
+    try:
+        num, den = rate.split("/")
+        if float(den) == 0:
+            return None
+        return float(num) / float(den)
+    except (ValueError, AttributeError):
+        return None

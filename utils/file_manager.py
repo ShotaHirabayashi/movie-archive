@@ -35,10 +35,10 @@ def save_uploaded_file(uploaded_file) -> str:
     return tmp_path
 
 
-def get_output_path(input_filename: str) -> str:
-    """圧縮出力用の一時ファイルパスを生成する"""
+def get_output_path(input_filename: str, suffix: str = ".mp4") -> str:
+    """変換出力用の一時ファイルパスを生成する"""
     name, _ = os.path.splitext(input_filename)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", prefix=f"{name}_compressed_")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix=f"{name}_compressed_")
     tmp.close()
     return tmp.name
 
