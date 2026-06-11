@@ -10,7 +10,7 @@ import streamlit as st
 from compressor.bitrate_calculator import calculate_bitrate
 from compressor.encoder import encode_video
 from compressor.ffprobe import get_video_metadata
-from compressor.gif_resizer import resize_gif
+from compressor.gif_resizer import compress_gif, resize_gif
 from config import (
     AUDIO_BITRATE_PRESETS,
     GIF_FPS_PRESETS,
@@ -381,10 +381,180 @@ def render_gif_resizer() -> None:
                 st.code(traceback.format_exc())
 
 
+def render_gif_compressor() -> None:
+    st.title("GIF Compress")
+    st.caption("GIFを目標ファイルサイズに圧縮するツール")
+
+    # --- セッション状態の初期化 ---
+    for key, default in [
+        ("gifc_done", False),
+        ("gifc_output_path", None),
+        ("gifc_metadata", None),
+    ]:
+        if key not in st.session_state:
+            st.session_state[key] = default
+
+    # === セクションA: ファイルアップロード ===
+    uploaded_file = st.file_uploader(
+        "GIFファイルをアップロード",
+        type=["gif"],
+        key="gifc_uploader",
+    )
+
+    if uploaded_file is None:
+        st.info("GIFファイルをアップロードしてください（最大300MB）")
+        st.stop()
+
+    # ディスクに保存 & メタデータ取得（キャッシュ）
+    input_path = save_uploaded_file(uploaded_file)
+
+    if st.session_state["gifc_metadata"] is None:
+        try:
+            st.session_state["gifc_metadata"] = get_video_metadata(input_path)
+        except Exception as e:
+            st.error(f"GIFの解析に失敗しました: {e}")
+            st.stop()
+
+    metadata = st.session_state["gifc_metadata"]
+
+    # メタデータ表示
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.subheader("GIF情報")
+        fps_str = f"{metadata.fps:.1f} fps" if metadata.fps else "不明"
+        st.markdown(f"""
+| 項目 | 値 |
+|------|------|
+| ファイルサイズ | **{metadata.file_size_mb:.1f} MB** |
+| 再生時間 | {metadata.duration:.1f} 秒 |
+| 解像度 | {metadata.resolution_label} |
+| フレームレート | {fps_str} |
+""")
+
+    with col2:
+        st.subheader("プレビュー")
+        st.image(input_path)
+
+    st.divider()
+
+    # === セクションB: 圧縮設定 ===
+    st.subheader("圧縮設定")
+
+    target_size_mb = st.number_input(
+        "目標ファイルサイズ (MB)",
+        min_value=0.1,
+        max_value=metadata.file_size_mb,
+        value=max(metadata.file_size_mb * 0.5, 0.1),
+        step=0.1,
+        format="%.1f",
+    )
+
+    st.caption(
+        "解像度・色数・フレームレートを自動調整しながら、目標サイズ以下になるまで最大5回試行します。"
+        "圧縮率が高いほど画質・滑らかさは低下します。"
+    )
+
+    st.divider()
+
+    # === セクションC / D: 圧縮実行 & 結果 ===
+
+    if st.session_state["gifc_done"] and st.session_state["gifc_output_path"]:
+        output_path = st.session_state["gifc_output_path"]
+        if os.path.exists(output_path):
+            output_size = os.path.getsize(output_path)
+            output_size_mb = output_size / (1024 * 1024)
+
+            st.subheader("圧縮完了")
+
+            col_r1, col_r2, col_r3 = st.columns(3)
+            col_r1.metric("元のサイズ", f"{metadata.file_size_mb:.1f} MB")
+            col_r2.metric("圧縮後サイズ", f"{output_size_mb:.2f} MB")
+            col_r3.metric("削減率", f"{(1 - output_size_mb / metadata.file_size_mb) * 100:.1f}%")
+
+            if output_size_mb > target_size_mb:
+                st.warning(f"出力サイズが目標 ({target_size_mb:.1f} MB) を超えています。目標サイズをさらに小さくできない場合があります")
+            else:
+                st.success(f"目標サイズ ({target_size_mb:.1f} MB) 以内に圧縮できました")
+
+            st.image(output_path)
+
+            with open(output_path, "rb") as f:
+                compressed_name = os.path.splitext(uploaded_file.name)[0] + "_compressed.gif"
+                st.download_button(
+                    label="圧縮済みGIFをダウンロード",
+                    data=f,
+                    file_name=compressed_name,
+                    mime="image/gif",
+                )
+
+            if st.button("最初からやり直す"):
+                cleanup_file(output_path)
+                cleanup_file(input_path)
+                st.session_state["gifc_done"] = False
+                st.session_state["gifc_output_path"] = None
+                st.session_state["gifc_metadata"] = None
+                for k in list(st.session_state.keys()):
+                    if k.startswith("uploaded_path_"):
+                        del st.session_state[k]
+                st.rerun()
+        else:
+            st.error("出力ファイルが見つかりません")
+
+    else:
+        if st.button("圧縮開始", type="primary"):
+            output_path = get_output_path(uploaded_file.name, suffix=".gif")
+
+            attempt_text = st.empty()
+            step_text = st.empty()
+            progress_bar = st.progress(0.0)
+            detail_text = st.empty()
+
+            def on_attempt(n: int, total: int):
+                attempt_text.markdown(f"**試行 {n}/{total} 回目**")
+
+            def update_progress(p: float):
+                if p < 0.5:
+                    pct = int(p * 200)
+                    step_text.markdown("**Step 1/2** - パレット生成中")
+                    progress_bar.progress(p * 2)
+                    detail_text.caption(f"{pct}%")
+                else:
+                    pct = int((p - 0.5) * 200)
+                    step_text.markdown("**Step 2/2** - GIF生成中")
+                    progress_bar.progress((p - 0.5) * 2)
+                    detail_text.caption(f"{pct}%")
+
+            try:
+                step_text.markdown("**Step 1/2** - パレット生成中")
+                detail_text.caption("0%")
+                compress_gif(
+                    input_path=input_path,
+                    output_path=output_path,
+                    target_size_mb=target_size_mb,
+                    duration_seconds=metadata.duration,
+                    original_width=metadata.width,
+                    original_fps=metadata.fps,
+                    progress_callback=update_progress,
+                    attempt_callback=on_attempt,
+                )
+                progress_bar.progress(1.0)
+                attempt_text.empty()
+                step_text.markdown("**完了!**")
+                detail_text.caption("100%")
+                st.session_state["gifc_done"] = True
+                st.session_state["gifc_output_path"] = output_path
+                st.rerun()
+            except Exception as e:
+                st.error(f"圧縮中にエラーが発生しました: {e}")
+                st.code(traceback.format_exc())
+
+
 # === メニュー ===
-mode = st.sidebar.radio("メニュー", ["動画圧縮", "GIFリサイズ"])
+mode = st.sidebar.radio("メニュー", ["動画圧縮", "GIFリサイズ", "GIF圧縮"])
 
 if mode == "動画圧縮":
     render_video_compressor()
-else:
+elif mode == "GIFリサイズ":
     render_gif_resizer()
+else:
+    render_gif_compressor()
