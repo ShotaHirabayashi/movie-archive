@@ -6,7 +6,7 @@ Description: >
 
 Globals:
   Function:
-    Runtime: python3.12
+    Runtime: python3.13
     Architectures: [arm64]
 
 Resources:
@@ -109,7 +109,7 @@ Resources:
       Description: ffmpeg/ffprobe static build (arm64)
       ContentUri: layers/ffmpeg/layer_content
       CompatibleArchitectures: [arm64]
-      CompatibleRuntimes: [python3.12]
+      CompatibleRuntimes: [python3.13]
       RetentionPolicy: Delete
 
   WorkerFunction:

@@ -9,6 +9,7 @@ import uuid
 from decimal import Decimal
 
 import boto3
+from botocore.config import Config
 
 TABLE_NAME = os.environ["TABLE_NAME"]
 FILES_BUCKET = os.environ["FILES_BUCKET"]
@@ -21,7 +22,13 @@ JOB_TTL_SECONDS = 24 * 3600
 DOWNLOAD_URL_EXPIRES = 900
 UPLOAD_URL_EXPIRES = 3600
 
-s3 = boto3.client("s3")
+# リージョナルエンドポイント+SigV4で署名する（グローバルエンドポイントは307リダイレクトになり
+# ブラウザからのアップロードが不安定になるため）
+s3 = boto3.client(
+    "s3",
+    region_name=os.environ.get("AWS_REGION", "ap-northeast-1"),
+    config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+)
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
 
 
