@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Movie Cut - serverless video/GIF compression.
+  S3 + CloudFront (UI) / API Gateway + Lambda (API) / S3 event + Lambda + FFmpeg Layer (worker) / DynamoDB (job state)
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64]
+
+Resources:
+  # ---------- ストレージ ----------
+  FilesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub movie-cut-files-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [POST, GET, HEAD]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-all-after-1day
+            Status: Enabled
+            ExpirationInDays: 1
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+  UiBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub movie-cut-ui-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ---------- API ----------
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [content-type]
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/api
+      Handler: app.handler
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref JobsTable
+          FILES_BUCKET: !Sub movie-cut-files-${AWS::AccountId}
+          MAX_UPLOAD_BYTES: '1073741824'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Sub movie-cut-files-${AWS::AccountId}
+      Events:
+        CreateJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/jobs
+            Method: POST
+        GetJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/jobs/{jobId}
+            Method: GET
+
+  # ---------- 圧縮ワーカー ----------
+  FfmpegLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: movie-cut-ffmpeg
+      Description: ffmpeg/ffprobe static build (arm64)
+      ContentUri: layers/ffmpeg/layer_content
+      CompatibleArchitectures: [arm64]
+      CompatibleRuntimes: [python3.13]
+      RetentionPolicy: Delete
+
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/worker
+      Handler: app.handler
+      Timeout: 900
+      MemorySize: 8192
+      EphemeralStorage:
+        Size: 10240
+      ReservedConcurrentExecutions: 3
+      Layers:
+        - !Ref FfmpegLayer
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref JobsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Sub movie-cut-files-${AWS::AccountId}
+      Events:
+        Upload:
+          Type: S3
+          Properties:
+            Bucket: !Ref FilesBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+
+  # ---------- CloudFront ----------
+  UiOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub movie-cut-ui-oac-${AWS::AccountId}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Movie Cut
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_200
+        HttpVersion: http2
+        Origins:
+          - Id: ui
+            DomainName: !GetAtt UiBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt UiOriginAccessControl.Id
+          - Id: api
+            DomainName: !Sub ${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: ui
+          ViewerProtocolPolicy: redirect-to-https
+          # CachingOptimized (AWSマネージドポリシー)
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            # CachingDisabled / AllViewerExceptHostHeader (AWSマネージドポリシー)
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+  UiBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref UiBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${UiBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+Outputs:
+  CloudFrontDomain:
+    Value: !GetAtt Distribution.DomainName
+  DistributionId:
+    Value: !Ref Distribution
+  UiBucketName:
+    Value: !Ref UiBucket
+  FilesBucketName:
+    Value: !Ref FilesBucket
+  ApiEndpoint:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com

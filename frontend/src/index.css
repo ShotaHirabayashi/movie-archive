@@ -1,0 +1,9 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}
+
+body {
+  @apply bg-zinc-50 text-zinc-950 antialiased dark:bg-zinc-900 dark:text-white;
+}

@@ -1,0 +1,2 @@
+# boto3はLambdaランタイム同梱のため追加依存なし
+# compressor/ と config.py は deploy.sh がリポルートからコピーする

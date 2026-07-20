@@ -11,3 +11,12 @@ build/
 *.log
 .DS_Store
 tmp/
+
+# AWS SAM (movie-cut serverless)
+aws/.aws-sam/
+aws/layers/ffmpeg/layer_content/
+aws/src/worker/compressor/
+aws/src/worker/config.py
+
+# frontend
+node_modules/
