@@ -26,7 +26,7 @@ cd frontend && npm install && npm run dev
 - **URL**: https://d34kvdm47i1n8p.cloudfront.net
 - **構成**: S3+CloudFront（UI配信）→ API Gateway HTTP API + Lambda（ジョブAPI）→ S3イベント + Lambda + FFmpeg Layer（圧縮ワーカー）→ DynamoDB（ジョブ状態）
 - デプロイは `./aws/deploy.sh` 一発（samconfig.tomlにprofile/region設定済み）
-- 旧Hugging Face Space（Shota1005/movie-cut）は廃止（GitHub Actions同期も削除済み）
+- 旧Hugging Face Space（Shota1005/movie-cut）は一時停止中（GitHub Actions同期は削除済み。不要になったら削除してよい）
 
 ## アーキテクチャ
 
